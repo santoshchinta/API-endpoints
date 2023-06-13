@@ -1,0 +1,137 @@
+const express = require('express');
+const { MongoClient, ObjectId } = require('mongodb');
+
+const app = express();
+const port = 3000;
+
+// Connection URL
+const url = 'mongodb://localhost:27017';
+
+// Database Name
+const dbName = 'your-database-name';
+const collectionName = 'players';
+
+// Middleware to parse JSON request body
+app.use(express.json());
+
+// Function to connect to MongoDB
+async function connectToMongoDB() {
+  const client = new MongoClient(url);
+  try {
+    // Connect to the MongoDB server
+    await client.connect();
+    console.log('Connected to MongoDB');
+
+    // Select the database
+    const db = client.db(dbName);
+
+    // Return the database and collection objects
+    return {
+      db,
+      collection: db.collection(collectionName)
+    };
+  } catch (error) {
+    console.log('Error connecting to MongoDB:', error);
+    throw error;
+  }
+}
+
+// Add a new player
+app.post('/players', async (req, res) => {
+  try {
+    const { db, collection } = await connectToMongoDB();
+
+    // Insert the new player document
+    const result = await collection.insertOne(req.body);
+
+    res.status(201).json(result.ops[0]);
+  } catch (error) {
+    console.log('Error adding player:', error);
+    res.status(500).json({ error: 'Failed to add player' });
+  }
+});
+
+// Update a player
+app.put('/players/:id', async (req, res) => {
+  try {
+    const { db, collection } = await connectToMongoDB();
+
+    const { id } = req.params;
+    const { ...playerData } = req.body;
+
+    // Update the player document
+    const result = await collection.updateOne({ _id: ObjectId(id) }, { $set: playerData });
+
+    if (result.matchedCount > 0) {
+      res.sendStatus(204);
+    } else {
+      res.status(404).json({ error: 'Player not found' });
+    }
+  } catch (error) {
+    console.log('Error updating player:', error);
+    res.status(500).json({ error: 'Failed to update player' });
+  }
+});
+
+// Delete a player
+app.delete('/players/:id', async (req, res) => {
+  try {
+    const { db, collection } = await connectToMongoDB();
+
+    const { id } = req.params;
+
+    // Delete the player document
+    const result = await collection.deleteOne({ _id: ObjectId(id) });
+
+    if (result.deletedCount > 0) {
+      res.sendStatus(204);
+    } else {
+      res.status(404).json({ error: 'Player not found' });
+    }
+  } catch (error) {
+    console.log('Error deleting player:', error);
+    res.status(500).json({ error: 'Failed to delete player' });
+  }
+});
+
+// Perform the queries
+app.post('/players/query', async (req, res) => {
+  try {
+    const { db, collection } = await connectToMongoDB();
+
+    const { queryType } = req.body;
+    let query;
+
+    switch (queryType) {
+      case 'mostTouchdownPasses':
+        query = collection.find({}, { _id: 0, name: 1, touchdownsThrown: 1 }).sort({ touchdownsThrown: -1 }).limit(1);
+        break;
+      case 'mostRushingYards':
+        query = collection.find({}, { _id: 0, name: 1, rushingYards: 1 }).sort({ rushingYards: -1 }).limit(1);
+        break;
+      case 'leastRushingYards':
+        query = collection.find({}, { _id: 0, name: 1, rushingYards: 1 }).sort({ rushingYards: 1 }).limit(1);
+        break;
+      case 'mostFieldGoalsMade':
+        query = collection.find({}, { _id: 0, name: 1, madeFieldGoals: 1 }).sort({ madeFieldGoals: -1 });
+        break;
+      case 'mostSacks':
+        query = collection.find({}, { _id: 0, name: 1, sacks: 1 }).sort({ sacks: -1 }).limit(1);
+        break;
+      default:
+        res.status(400).json({ error: 'Invalid query type' });
+        return;
+    }
+
+    const result = await query.toArray();
+    res.json(result);
+  } catch (error) {
+    console.log('Error executing query:', error);
+    res.status(500).json({ error: 'Failed to execute query' });
+  }
+});
+
+// Start the server
+app.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`);
+});
